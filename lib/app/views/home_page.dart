@@ -18,31 +18,42 @@ class NotesHomePages extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
 
-      backgroundColor: Colors.grey[300],
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _buildSearchBar(),
-                  const SizedBox(height: 16,),
-                  Expanded(child: _buildNotesList()),
-                ],
+    return WillPopScope(
+      onWillPop: () async {
+        // First check if search is active
+        if (controller.isSearchActive.value) {
+          _handleSearchToggle(); // Close search instead of exiting
+          return false; // Prevent app exit
+        }
+        return true; // Allow app exit if search is not active
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey[300],
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    _buildSearchBar(),
+                    const SizedBox(height: 16,),
+                    Expanded(child: _buildNotesList()),
+                  ],
+                ),
               ),
-            ),
-
-
-          ],
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Get.to(() => AddNotePage()),
-        backgroundColor: Colors.blue,
-        child: const Icon(Icons.add),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            controller.clearAddNoteForm();
+            Get.to(() => AddNotePage());
+          },
+          backgroundColor: Colors.blue,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -83,18 +94,7 @@ class NotesHomePages extends StatelessWidget {
                       controller.isSearchActive.value ? Icons.arrow_back : Icons.search,
                       color: Colors.grey,
                     ),
-                    onPressed: () {
-                      if (controller.isSearchActive.value) {
-                        // Close the search
-                        controller.isSearchActive.value = false;
-                        searchController.clear();
-                        controller.searchQuery.value = '';
-                        controller.fetchNotes();
-                      } else {
-                        // Open the search
-                        controller.isSearchActive.value = true;
-                      }
-                    },
+                    onPressed: _handleSearchToggle,
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                   ),
@@ -102,68 +102,64 @@ class NotesHomePages extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
-                    onTap: (){
-                      if (controller.isSearchActive.value) {
-                        // Close the search
-                        controller.isSearchActive.value = false;
-                        searchController.clear();
-                        controller.searchQuery.value = '';
-                        controller.fetchNotes();
-                      } else {
-                        // Open the search
+                    controller: searchController,
+                    onTap: () {
+                      if (!controller.isSearchActive.value) {
                         controller.isSearchActive.value = true;
                       }
                     },
-                    controller: searchController,
                     decoration: const InputDecoration(
                       hintText: 'Search notes',
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
                     ),
-                    onChanged: (value) => controller.searchQuery.value = value,
-                    onSubmitted: (value) {
-                      controller.addToRecents(value);
-                      controller.isSearchActive.value = false;
-                      controller.fetchNotes();
-                    },
-                  ),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: controller.searchQuery.isNotEmpty
-                      ? IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () {
-                      if (controller.isSearchActive.value) {
-                        // Close the search
-                        controller.isSearchActive.value = false;
-                        searchController.clear();
-                        controller.searchQuery.value = ''; // Clear search query
+                    onChanged: (value) {
+                      controller.searchQuery.value = value;
+                      if (value.trim().isNotEmpty) {
+                        controller.filterNotes();
                       } else {
-                        // Open the search
-                        controller.isSearchActive.value = true;
+                        controller.resetSearch();
                       }
                     },
-
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  )
-                      : const SizedBox.shrink(),
-                ),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: controller.isSearchActive.value
-                      ? const Icon(
-                    Icons.mic,
-                    color: Colors.grey,
-                    key: ValueKey('mic'),
-                  )
-                      : CircleAvatar(
-                    backgroundImage: NetworkImage(controller.profilePictureUrl),
-                    radius: 16,
-                    key: const ValueKey('profile'),
+                    onSubmitted: (value) {
+                      if (value.trim().isNotEmpty) {
+                        controller.addToRecents(value);
+                        controller.isSearchActive.value = false;
+                      }
+                    },
                   ),
                 ),
+                if (controller.searchQuery.isNotEmpty)
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.grey),
+                      onPressed: () {
+                        searchController.clear();
+                        controller.searchQuery.value = '';
+                        controller.resetSearch();
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                // Mic Icon
+                if (controller.isSearchActive.value)
+                  IconButton(
+                    icon: const Icon(Icons.mic, color: Colors.grey),
+                    onPressed: () {
+                      // Implement voice search functionality
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                // Profile Picture
+                if (!controller.isSearchActive.value)
+                  CircleAvatar(
+                    backgroundImage: NetworkImage(controller.profilePictureUrl),
+                    radius: 16,
+                  ),
               ],
             ),
             if (controller.isSearchActive.value) ...[
@@ -175,66 +171,58 @@ class NotesHomePages extends StatelessWidget {
       ),
     ));
   }
+  void _handleSearchToggle() {
+    if (controller.isSearchActive.value) {
+      controller.isSearchActive.value = false;
+      searchController.clear();
+      controller.searchQuery.value = '';
+      controller.resetSearch();
+    } else {
+      controller.isSearchActive.value = true;
+    }
+  }
+
 
 
 
   Widget _buildSearchOverlay() {
     return Obx(() {
-      bool isExpanded = controller.isSearchActive.value;
-
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-        height: isExpanded ? Get.height * 0.6 : 0,
-        // margin: const EdgeInsets.only(top: 92),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(16),
-            topRight: Radius.circular(16),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Type',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
-        ),
-        child: SingleChildScrollView(
-          physics: isExpanded ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Type',
+          _buildTypeFilters(),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Searches',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              _buildTypeFilters(),
-
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Recent Searches',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    if (controller.recentSearches.isNotEmpty)
-                      TextButton(
-                        onPressed: () => controller.clearRecents(),
-                        child: const Text('Clear all'),
-                      ),
-                  ],
-                ),
-              ),
-              _buildRecentSearches(),
-            ],
+                if (controller.recentSearches.isNotEmpty)
+                  TextButton(
+                    onPressed: () => controller.clearRecents(),
+                    child: const Text('Clear all'),
+                  ),
+              ],
+            ),
           ),
-        ),
+          _buildRecentSearches(),
+        ],
       );
     });
   }
@@ -256,23 +244,30 @@ class NotesHomePages extends StatelessWidget {
   }
 
   Widget _buildFilterButton(String label, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              shape: BoxShape.circle,
+    return InkWell(
+      onTap: () {
+        controller.filterNotesByType(label.toLowerCase());
+        searchController.text = label;
+        controller.searchQuery.value = label;
+      },
+      child: Padding(
+        padding: const EdgeInsets.only(right: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: Colors.grey[600], size: 30),
             ),
-            child: Icon(icon, color: Colors.grey[600], size: 30),
-          ),
-          const SizedBox(height: 8),
-          Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-        ],
+            const SizedBox(height: 8),
+            Text(label, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+          ],
+        ),
       ),
     );
   }
@@ -285,7 +280,7 @@ class NotesHomePages extends StatelessWidget {
         onTap: () {
           searchController.text = search;
           controller.searchQuery.value = search;
-          controller.isSearchActive.value = false;
+          controller.filterNotes();
         },
       )).toList(),
     ));

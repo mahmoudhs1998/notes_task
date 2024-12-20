@@ -22,25 +22,92 @@ class NotesController extends GetxController {
     fetchNotes();
   }
 
+
+  void clearAddNoteForm() {
+    selectedType.value = 'text';
+    todoItems.clear();
+    selectedDateTime.value = null;
+  }
+
+
   void filterNotes() {
-    // Filter notes based on the search query
-    if (searchQuery.isEmpty) {
-      filteredNotes.assignAll(notes);
-    } else {
-      filteredNotes.assignAll(
-        notes.where((note) => note.title.toLowerCase().contains(searchQuery.value.toLowerCase()) ||
-            note.content.toLowerCase().contains(searchQuery.value.toLowerCase()))
-            .toList(),
-      );
+    if (searchQuery.value.trim().isEmpty) {
+      // If search is empty or only whitespace, show all notes
+      resetSearch();
+      return;
+    }
+
+    final query = searchQuery.value.toLowerCase();
+    final filtered = notes.where((note) {
+      final titleMatch = note.title.toLowerCase().contains(query);
+      final contentMatch = note.content.toLowerCase().contains(query);
+      final todoMatch = note.todoItems?.any((item) =>
+          item.text.toLowerCase().contains(query)) ?? false;
+
+      final typeMatch = selectedType.value == 'text' ||
+          note.type.toLowerCase() == selectedType.value.toLowerCase();
+
+      return (titleMatch || contentMatch || todoMatch) && typeMatch;
+    }).toList();
+
+    notes.assignAll(filtered);
+  }
+
+  void filterNotesByType(String type) {
+    selectedType.value = type;
+    filterNotes();
+  }
+
+  void resetSearch() {
+    fetchNotes(); // Reload all notes from Firebase
+    selectedType.value = 'text';
+  }
+
+  void addToRecents(String query) {
+    if (query.trim().isNotEmpty && !recentSearches.contains(query)) {
+      if (recentSearches.length >= 5) {
+        recentSearches.removeLast();
+      }
+      recentSearches.insert(0, query);
     }
   }
 
+  void clearRecents() {
+    recentSearches.clear();
+  }
+
+  // Add this method to handle back press in search
+  bool handleBackPress() {
+    if (isSearchActive.value) {
+      isSearchActive.value = false;
+      searchQuery.value = '';
+      selectedType.value = 'text';
+      filterNotes();
+      return false;
+    }
+    return true;
+  }
+
+  // Modified note fetching to properly handle different note types
   void fetchNotes() {
     _firestore.collection('notes')
         .orderBy('timestamp', descending: true)
         .snapshots()
         .listen((snapshot) {
-      notes.value = snapshot.docs.map((doc) => Note.fromSnapshot(doc)).toList();
+      notes.value = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Note(
+          id: doc.id,
+          title: data['title'] ?? '',
+          content: data['content'] ?? '',
+          type: data['type'] ?? 'text',
+          todoItems: (data['todoItems'] as List<dynamic>?)?.map((item) =>
+              TodoItem.fromMap(item as Map<String, dynamic>)).toList(),
+          eventDetails: data['eventDetails'] != null ?
+          EventDetails.fromMap(data['eventDetails'] as Map<String, dynamic>) : null,
+          timestamp: (data['timestamp'] as Timestamp).toDate(),
+        );
+      }).toList();
     });
   }
 
@@ -50,16 +117,6 @@ class NotesController extends GetxController {
         note.content.toLowerCase().contains(searchQuery.toLowerCase())).toList();
   }
 
-  void addToRecents(String query) {
-    if (query.isNotEmpty && !recentSearches.contains(query)) {
-      if (recentSearches.length >= 5) recentSearches.removeLast();
-      recentSearches.insert(0, query);
-    }
-  }
-
-  void clearRecents() {
-    recentSearches.clear();
-  }
 
   Future<void> addNote(String title, String content, String type) async {
     await _firestore.collection('notes').add({
@@ -135,100 +192,28 @@ class NotesController extends GetxController {
   void setDateTime(DateTime dateTime) {
     selectedDateTime.value = dateTime;
   }
-  Future<void> updateNote(String id, String title, String content) async {
-    await _firestore.collection('notes').doc(id).update({
+
+  Future<void> updateNote(String id, String title, String content,
+      {List<TodoItem>? todoItems, EventDetails? eventDetails}) async {
+    final updateData = {
       'title': title,
       'content': content,
       'timestamp': FieldValue.serverTimestamp(),
-    });
-  }
+    };
 
+    if (todoItems != null) {
+      updateData['todoItems'] = todoItems.map((item) => item.toMap()).toList();
+    }
+
+    if (eventDetails != null) {
+      updateData['eventDetails'] = eventDetails.toMap();
+    }
+
+    await _firestore.collection('notes').doc(id).update(updateData);
+  }
   Future<void> deleteNote(String id) async {
     await _firestore.collection('notes').doc(id).delete();
   }
 
 }
 
-// class NotesController extends GetxController {
-//   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-//   final RxList<Note> notes = <Note>[].obs;
-//   final RxString searchQuery = ''.obs;
-//   final RxBool isSearching = false.obs;
-//   final RxBool isSearchActive = false.obs;
-//   final RxList<String> recentSearches = <String>[].obs;
-//
-//   // Add profile picture URL - in a real app, this would come from user authentication
-//   final String profilePictureUrl = 'https://th.bing.com/th/id/OIP.IGNf7GuQaCqz_RPq5wCkPgHaLH?w=115&h=180&c=7&r=0&o=5&pid=1.7'; // Placeholder for demo
-//
-//
-//   @override
-//   void onInit() {
-//     super.onInit();
-//     fetchNotes();
-//   }
-//   NotesController() {
-//     debounce(searchQuery, (_) => filterNotes(), time: const Duration(milliseconds: 300));
-//   }
-//
-//
-//   void filterNotes() {
-//     if (searchQuery.isEmpty) {
-//       filteredNotes.assignAll(notes);
-//     } else {
-//       filteredNotes.assignAll(
-//         notes.where((notes) =>
-//             notes.title.toLowerCase().contains(searchQuery.value.toLowerCase())),
-//       );
-//     }
-//   }
-//
-//
-//   void fetchNotes() {
-//     _firestore.collection('notes')
-//         .orderBy('timestamp', descending: true)
-//         .snapshots()
-//         .listen((snapshot) {
-//       notes.value = snapshot.docs.map((doc) => Note.fromSnapshot(doc)).toList();
-//     });
-//   }
-//
-//   Future<void> addNote(String title, String content, String type) async {
-//     await _firestore.collection('notes').add({
-//       'title': title,
-//       'content': content,
-//       'timestamp': FieldValue.serverTimestamp(),
-//       'type': type,
-//     });
-//   }
-//
-//   Future<void> updateNote(String id, String title, String content) async {
-//     await _firestore.collection('notes').doc(id).update({
-//       'title': title,
-//       'content': content,
-//       'timestamp': FieldValue.serverTimestamp(),
-//     });
-//   }
-//
-//   Future<void> deleteNote(String id) async {
-//     await _firestore.collection('notes').doc(id).delete();
-//   }
-
-//   List<Note> get filteredNotes {
-//     return searchQuery.isEmpty
-//         ? notes
-//         : notes.where((note) =>
-//     note.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
-//         note.content.toLowerCase().contains(searchQuery.toLowerCase()))
-//         .toList();
-//   }
-//   void addToRecents(String query) {
-//     if (query.isNotEmpty && !recentSearches.contains(query)) {
-//       if (recentSearches.length >= 5) recentSearches.removeLast();
-//       recentSearches.insert(0, query);
-//     }
-//   }
-//
-//   void clearRecents() {
-//     recentSearches.clear();
-//   }
-// }
